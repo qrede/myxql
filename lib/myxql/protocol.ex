@@ -2,13 +2,15 @@ defmodule MyXQL.Protocol do
   @moduledoc false
   use DBConnection
   import MyXQL.Messages
-  alias MyXQL.{Error, Query, Result}
+  alias MyXQL.{Cursor, Error, Query, Result}
 
   defstruct [
     :sock,
     :connection_id,
     transaction_status: :idle,
-    prepared_statements: %{}
+    # TODO: GC prepared statements?
+    prepared_statements: %{},
+    cursor: nil
   ]
 
   @impl true
@@ -79,18 +81,20 @@ defmodule MyXQL.Protocol do
     end
   end
 
+  defp maybe_reprepare(query, s) do
+    case get_statement_id(query, s) do
+      {:ok, statement_id} ->
+        {query, statement_id, s}
+
+      :error ->
+        reprepare(query, s)
+    end
+  end
+
   @impl true
   def handle_execute(%Query{type: :binary} = query, params, _opts, s) do
-    {query, statement_id, s} =
-      case get_statement_id(query, s) do
-        {:ok, statement_id} ->
-          {query, statement_id, s}
-
-        :error ->
-          reprepare(query, s)
-      end
-
-    data = encode_com_stmt_execute(statement_id, params)
+    {query, statement_id, s} = maybe_reprepare(query, s)
+    data = encode_com_stmt_execute(statement_id, params, :cursor_type_no_cursor)
     data = send_and_recv(s, data)
 
     case decode_com_stmt_execute_response(data) do
@@ -161,6 +165,7 @@ defmodule MyXQL.Protocol do
         handle_transaction("SAVEPOINT myxql_savepoint", s)
 
       mode when mode in [:transaction, :savepoint] ->
+        IO.inspect [mode: mode, status: status]
         {status, s}
     end
   end
@@ -202,13 +207,63 @@ defmodule MyXQL.Protocol do
   end
 
   @impl true
-  def handle_declare(_, _, _, _), do: raise("not implemented yet")
+  def handle_declare(query, params, _opts, s) do
+    cursor = %Cursor{params: params}
+    {:ok, query, cursor, s}
+  end
 
   @impl true
-  def handle_fetch(_, _, _, _), do: raise("not implemented yet")
+  def handle_fetch(query, %Cursor{params: params}, opts, s) do
+    max_rows = Keyword.fetch!(opts, :max_rows)
+    {_query, statement_id, s} = maybe_reprepare(query, s)
 
+    case s.cursor do
+      nil ->
+        data = encode_com_stmt_execute(statement_id, params, :cursor_type_read_only)
+        data = send_and_recv(s, data)
+
+        case decode_com_stmt_execute_response(data) do
+          resultset(column_definitions: column_definitions, rows: [], status_flags: status_flags) ->
+            true = :server_status_cursor_exists in list_status_flags(status_flags)
+            s = %{s | cursor: column_definitions}
+
+            fetch(statement_id, column_definitions, max_rows, s)
+        end
+
+      column_definitions ->
+        fetch(statement_id, column_definitions, max_rows, s)
+    end
+  end
+
+  defp fetch(statement_id, column_definitions, max_rows, s) do
+    data = encode_com_stmt_fetch(statement_id, max_rows, 0)
+    data = send_and_recv(s, data)
+
+    case data do
+      <<_size::24-little, _seq, 0xFF, rest::binary>> ->
+        err_packet(error_message: message) = decode_err_packet(<<0xFF>> <> rest)
+        {:error, %MyXQL.Error{message: message}, %{s | cursor: nil}}
+
+      _ ->
+        {rows, _warning_count, status_flags} =
+          decode_binary_resultset_rows(data, column_definitions, [])
+
+        columns = Enum.map(column_definitions, &elem(&1, 1))
+        result = %MyXQL.Result{rows: rows, num_rows: length(rows), columns: columns}
+
+        if :server_status_cursor_exists in list_status_flags(status_flags) do
+          {:cont, result, s}
+        else
+          {:halt, result, %{s | cursor: nil}}
+        end
+    end
+  end
+
+  # TODO: finish up
   @impl true
-  def handle_deallocate(_, _, _, _), do: raise("not implemented yet")
+  def handle_deallocate(_query, %Cursor{}, _opts, s) do
+    {:ok, nil, s}
+  end
 
   ## Internals
 

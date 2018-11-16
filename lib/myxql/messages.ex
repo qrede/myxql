@@ -64,7 +64,8 @@ defmodule MyXQL.Messages do
       :client_plugin_auth,
       :client_secure_connection,
       :client_found_rows,
-      :client_multi_statements
+      :client_multi_statements,
+      :client_multi_results
     ])
     |> maybe_put_flag(Map.fetch!(@capability_flags, :client_connect_with_db), !is_nil(database))
     |> maybe_put_flag(Map.fetch!(@capability_flags, :client_ssl), ssl?)
@@ -74,6 +75,14 @@ defmodule MyXQL.Messages do
   @character_sets %{
     utf8_general_ci: 0x21
   }
+
+  # https://dev.mysql.com/doc/internals/en/com-stmt-execute.html
+  @cursor_types %{
+    cursor_type_no_cursor: 0x00,
+    cursor_type_read_only: 0x01,
+    cursor_type_for_update: 0x02,
+    cursor_type_scrollable: 0x04
+   }
 
   defp maybe_put_flag(flags, flag, true), do: flags ||| flag
   defp maybe_put_flag(flags, _flag, false), do: flags
@@ -99,6 +108,12 @@ defmodule MyXQL.Messages do
   def has_status_flag?(flags, name) do
     value = Map.fetch!(@status_flags, name)
     (flags &&& value) == value
+  end
+
+  def list_status_flags(flags) do
+    @status_flags
+    |> Map.keys()
+    |> Enum.filter(&has_status_flag?(flags, &1))
   end
 
   ###########################################################
@@ -409,15 +424,9 @@ defmodule MyXQL.Messages do
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-execute.html
-  def encode_com_stmt_execute(statement_id, params) do
+  def encode_com_stmt_execute(statement_id, params, cursor_type) do
     command = 0x17
-
-    # TODO: cursors
-    # CURSOR_TYPE_NO_CURSOR  0x00
-    # CURSOR_TYPE_READ_ONLY  0x01
-    # CURSOR_TYPE_FOR_UPDATE 0x02
-    # CURSOR_TYPE_SCROLLABLE 0x04
-    flags = 0x00
+    flags = Map.fetch!(@cursor_types, cursor_type)
 
     # Always 0x01
     iteration_count = 0x01
@@ -492,6 +501,17 @@ defmodule MyXQL.Messages do
           status_flags: status_flags
         )
     end
+  end
+
+  # https://dev.mysql.com/doc/internals/en/com-stmt-fetch.html
+  def encode_com_stmt_fetch(statement_id, num_rows, sequence_id) do
+    payload = <<
+      0x1c,
+      statement_id::32-little,
+      num_rows::32-little
+    >>
+
+    encode_packet(payload, sequence_id)
   end
 
   # https://dev.mysql.com/doc/internals/en/com-query-response.html#packet-Protocol::ColumnDefinition41
@@ -575,7 +595,7 @@ defmodule MyXQL.Messages do
   end
 
   # https://dev.mysql.com/doc/internals/en/binary-protocol-resultset.html
-  defp decode_binary_resultset_rows(data, column_definitions, acc) do
+  def decode_binary_resultset_rows(data, column_definitions, acc) do
     case take_packet(data) do
       # EOF packet
       {<<0xFE, warning_count::int(2), status_flags::int(2), 0::8*2>>, ""} ->
