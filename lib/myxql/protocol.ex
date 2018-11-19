@@ -101,7 +101,7 @@ defmodule MyXQL.Protocol do
       resultset(column_definitions: column_definitions, rows: rows, status_flags: status_flags) ->
         columns = Enum.map(column_definitions, &elem(&1, 1))
         result = %Result{columns: columns, num_rows: length(rows), rows: rows}
-        {:ok, query, result, update_status(s, status_flags)}
+        {:ok, query, result, put_status(s, status_flags)}
 
       ok_packet(
         status_flags: status_flags,
@@ -115,7 +115,7 @@ defmodule MyXQL.Protocol do
           last_insert_id: last_insert_id
         }
 
-        {:ok, query, result, update_status(s, status_flags)}
+        {:ok, query, result, put_status(s, status_flags)}
 
       err_packet(error_code: code, error_message: message) ->
         mysql = %{code: code, message: message}
@@ -129,12 +129,12 @@ defmodule MyXQL.Protocol do
     data = send_and_recv(s, data)
 
     case decode_com_query_response(data) do
-      ok_packet(last_insert_id: last_insert_id) ->
-        {:ok, query, %MyXQL.Result{last_insert_id: last_insert_id}, s}
+      ok_packet(last_insert_id: last_insert_id, status_flags: status_flags) ->
+        {:ok, query, %MyXQL.Result{last_insert_id: last_insert_id}, put_status(s, status_flags)}
 
-      resultset(column_definitions: column_definitions, rows: rows) ->
+      resultset(column_definitions: column_definitions, rows: rows, status_flags: status_flags) ->
         columns = Enum.map(column_definitions, &elem(&1, 1))
-        {:ok, query, %MyXQL.Result{columns: columns, rows: rows}, s}
+        {:ok, query, %MyXQL.Result{columns: columns, rows: rows}, put_status(s, status_flags)}
 
       err_packet(error_message: message) ->
         {:error, %MyXQL.Error{message: message}, s}
@@ -165,7 +165,6 @@ defmodule MyXQL.Protocol do
         handle_transaction("SAVEPOINT myxql_savepoint", s)
 
       mode when mode in [:transaction, :savepoint] ->
-        IO.inspect [mode: mode, status: status]
         {status, s}
     end
   end
@@ -227,7 +226,7 @@ defmodule MyXQL.Protocol do
             true = :server_status_cursor_exists in list_status_flags(status_flags)
             s = %{s | cursor: column_definitions}
 
-            fetch(statement_id, column_definitions, max_rows, s)
+            fetch(statement_id, column_definitions, max_rows, put_status(s, status_flags))
         end
 
       column_definitions ->
@@ -274,8 +273,12 @@ defmodule MyXQL.Protocol do
       conn_id: conn_id,
       auth_plugin_name: auth_plugin_name,
       auth_plugin_data1: auth_plugin_data1,
-      auth_plugin_data2: auth_plugin_data2
+      auth_plugin_data2: auth_plugin_data2,
+      status_flags: _status_flags
     ) = MyXQL.Messages.decode_handshake_v10(data)
+
+    # TODO:
+    # IO.inspect list_status_flags(status_flags)
 
     state = %{state | connection_id: conn_id}
     sequence_id = 1
@@ -432,7 +435,7 @@ defmodule MyXQL.Protocol do
     case send_text_query(s, statement) do
       ok_packet(status_flags: status_flags) ->
         result = :todo
-        {:ok, result, update_status(s, status_flags)}
+        {:ok, result, put_status(s, status_flags)}
 
       err_packet(error_code: code, error_message: message) ->
         # TODO: do we need query here?
@@ -455,7 +458,7 @@ defmodule MyXQL.Protocol do
     end
   end
 
-  defp update_status(s, status_flags) do
+  defp put_status(s, status_flags) do
     %{s | transaction_status: transaction_status(status_flags)}
   end
 

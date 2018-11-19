@@ -180,6 +180,7 @@ defmodule MyXQLTest do
         assert {:error, %MyXQL.Error{mysql: %{code: 1062}}} =
                  MyXQL.query(conn, "INSERT INTO uniques VALUES (1), (1)")
 
+        # TODO:
         # assert DBConnection.status(conn) == :error
       end)
 

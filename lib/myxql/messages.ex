@@ -407,20 +407,25 @@ defmodule MyXQL.Messages do
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html#packet-COM_STMT_PREPARE_OK
-  defrecord :com_stmt_prepare_ok, [:statement_id]
+  defrecord :com_stmt_prepare_ok, [:statement_id, :num_columns, :num_params, :warning_count]
 
   def decode_com_stmt_prepare_ok(data) do
     <<
       0,
       statement_id::int(4),
-      _num_columns::int(2),
-      _num_params::int(2),
+      num_columns::int(2),
+      num_params::int(2),
       0,
-      _warning_count::int(2),
+      warning_count::int(2),
       _rest::binary
     >> = data
 
-    com_stmt_prepare_ok(statement_id: statement_id)
+    com_stmt_prepare_ok(
+      statement_id: statement_id,
+      num_columns: num_columns,
+      num_params: num_params,
+      warning_count: warning_count
+    )
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-execute.html
