@@ -84,7 +84,7 @@ defmodule MyXQL.Messages do
     cursor_type_read_only: 0x01,
     cursor_type_for_update: 0x02,
     cursor_type_scrollable: 0x04
-   }
+  }
 
   defp maybe_put_flag(flags, flag, true), do: flags ||| flag
   defp maybe_put_flag(flags, _flag, false), do: flags
@@ -514,7 +514,7 @@ defmodule MyXQL.Messages do
   # https://dev.mysql.com/doc/internals/en/com-stmt-fetch.html
   def encode_com_stmt_fetch(statement_id, num_rows, sequence_id) do
     payload = <<
-      0x1c,
+      0x1C,
       statement_id::32-little,
       num_rows::32-little
     >>

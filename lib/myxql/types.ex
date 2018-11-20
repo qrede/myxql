@@ -292,17 +292,17 @@ defmodule MyXQL.Types do
   end
 
   defp take_binary_datetime(
-        <<7, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1),
-          second::int(1), rest::binary>>
-      ) do
+         <<7, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1),
+           second::int(1), rest::binary>>
+       ) do
     {:ok, naive_datetime} = NaiveDateTime.new(year, month, day, hour, minute, second)
     {naive_datetime, rest}
   end
 
   defp take_binary_datetime(
-        <<11, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1),
-          second::int(1), microsecond::int(4), rest::binary>>
-      ) do
+         <<11, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1),
+           second::int(1), microsecond::int(4), rest::binary>>
+       ) do
     {:ok, naive_datetime} =
       NaiveDateTime.new(year, month, day, hour, minute, second, {microsecond, 6})
 
@@ -318,38 +318,38 @@ defmodule MyXQL.Types do
   end
 
   defp encode_binary_time(%Time{
-        hour: hour,
-        minute: minute,
-        second: second,
-        microsecond: {microsecond, _}
-      }) do
+         hour: hour,
+         minute: minute,
+         second: second,
+         microsecond: {microsecond, _}
+       }) do
     {@mysql_type_time,
      <<12, 0::int(1), 0::int(4), hour::int(1), minute::int(1), second::int(1),
        microsecond::int(4)>>}
   end
 
   defp encode_binary_datetime(%NaiveDateTime{
-        year: year,
-        month: month,
-        day: day,
-        hour: hour,
-        minute: minute,
-        second: second,
-        microsecond: {0, 0}
-      }) do
+         year: year,
+         month: month,
+         day: day,
+         hour: hour,
+         minute: minute,
+         second: second,
+         microsecond: {0, 0}
+       }) do
     {@mysql_type_datetime,
      <<7, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1), second::int(1)>>}
   end
 
   defp encode_binary_datetime(%NaiveDateTime{
-        year: year,
-        month: month,
-        day: day,
-        hour: hour,
-        minute: minute,
-        second: second,
-        microsecond: {microsecond, _}
-      }) do
+         year: year,
+         month: month,
+         day: day,
+         hour: hour,
+         minute: minute,
+         second: second,
+         microsecond: {microsecond, _}
+       }) do
     {@mysql_type_datetime,
      <<11, year::int(2), month::int(1), day::int(1), hour::int(1), minute::int(1), second::int(1),
        microsecond::int(4)>>}
