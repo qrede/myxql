@@ -65,7 +65,9 @@ defmodule MyXQL.Messages do
       :client_secure_connection,
       :client_found_rows,
       :client_multi_statements,
-      :client_multi_results
+      :client_multi_results,
+      :client_transactions,
+      :client_session_track
     ])
     |> maybe_put_flag(Map.fetch!(@capability_flags, :client_connect_with_db), !is_nil(database))
     |> maybe_put_flag(Map.fetch!(@capability_flags, :client_ssl), ssl?)
@@ -149,7 +151,7 @@ defmodule MyXQL.Messages do
   # https://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
   # TODO:
   # - investigate using CLIENT_SESSION_TRACK & SERVER_SESSION_STATE_CHANGED capabilities
-  defrecord :ok_packet, [:affected_rows, :last_insert_id, :status_flags, :warning_count]
+  defrecord :ok_packet, [:affected_rows, :last_insert_id, :status_flags, :warning_count, :info]
 
   def decode_ok_packet(data) do
     <<0x00, rest::binary>> = data
@@ -160,14 +162,15 @@ defmodule MyXQL.Messages do
     <<
       status_flags::int(2),
       warning_count::int(2),
-      _::binary
+      info::binary
     >> = rest
 
     ok_packet(
       affected_rows: affected_rows,
       last_insert_id: last_insert_id,
       status_flags: status_flags,
-      warning_count: warning_count
+      warning_count: warning_count,
+      info: info
     )
   end
 
