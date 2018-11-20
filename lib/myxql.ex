@@ -47,6 +47,15 @@ defmodule MyXQL do
 
   defdelegate execute(conn, query, params \\ [], opts \\ []), to: DBConnection
 
+  def close(conn, %MyXQL.Query{} = query, opts \\ []) do
+    case DBConnection.close(conn, query, opts) do
+      {:ok, _} ->
+        :ok
+      {:error, _} = error ->
+        error
+    end
+  end
+
   defdelegate transaction(conn, fun, opts \\ []), to: DBConnection
 
   defdelegate rollback(conn, reason), to: DBConnection
